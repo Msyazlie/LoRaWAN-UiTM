@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+*.local
+
+# Logs
+*.log
+
+# Docker volumes and data
+chirpstack-docker/configuration/postgresql/data/
+chirpstack-docker/data/
+
+# OS files
+.DS_Store
+Thumbs.db

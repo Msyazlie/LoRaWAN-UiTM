@@ -1,0 +1,8 @@
+{
+  "beacons": [
+    {"id": "64B0", "name": "Asset Tag #1"},
+    {"id": "64AF", "name": "Asset Tag #2"},
+    {"id": "64AE", "name": "Asset Tag #3"}
+  ],
+  "_comment": "Add more beacons here. Format: {\"id\": \"XXXX\", \"name\": \"Description\"}"
+}
