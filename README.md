@@ -313,5 +313,5 @@ This project is developed for educational and research purposes at **Universiti 
 ---
 
 <p align="center">
-  <i>Developed with ❤️ at UiTM</i>
+  <i>Developed with ❤️</i>
 </p>
