@@ -1,0 +1,53 @@
+{
+    "deduplicationId": "32132e3a-875d-46e6-a610-dc74d3bc57fb",
+    "time": "2026-01-07T02:44:55.910189320+00:00",
+    "deviceInfo": {
+        "tenantId": "fe0ccc4c-c197-4be4-93b5-6b17edf37787",
+        "tenantName": "UiTM",
+        "applicationId": "579dd7d2-1e4d-4e5c-b5ba-751f651142bb",
+        "applicationName": "MacroSensor",
+        "deviceProfileId": "90476cc5-c453-4f0d-96dd-3931171bbea7",
+        "deviceProfileName": "MacroSensor",
+        "deviceName": "MS1",
+        "devEui": "70b3d5a4d31205cf",
+        "deviceClassEnabled": "CLASS_C",
+        "tags": {}
+    },
+    "devAddr": "01d25c0d",
+    "adr": false,
+    "dr": 3,
+    "fCnt": 12,
+    "fPort": 34,
+    "confirmed": false,
+    "data": "0AEAEGSvxw==",
+    "object": {
+        "number": 1,
+        "beacon1": "001064AF",
+        "type": "AlarmBeaconList",
+        "beacon1_minor": "64AF",
+        "rssi1": -57
+    },
+    "rxInfo": [
+        {
+            "gatewayId": "ac1f09fffe1ea999",
+            "uplinkId": 36980,
+            "nsTime": "2026-01-07T02:44:55.695621558+00:00",
+            "rssi": -18,
+            "snr": 12.5,
+            "location": {},
+            "context": "VlzsIw==",
+            "crcStatus": "CRC_OK"
+        }
+    ],
+    "txInfo": {
+        "frequency": 923200000,
+        "modulation": {
+            "lora": {
+                "bandwidth": 125000,
+                "spreadingFactor": 9,
+                "codeRate": "CR_4_5"
+            }
+        }
+    },
+    "regionConfigId": "as923"
+}

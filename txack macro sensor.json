@@ -1,0 +1,35 @@
+{
+    "downlinkId": 734821125,
+    "time": "2026-01-07T02:46:52.676902892+00:00",
+    "deviceInfo": {
+        "tenantId": "fe0ccc4c-c197-4be4-93b5-6b17edf37787",
+        "tenantName": "UiTM",
+        "applicationId": "579dd7d2-1e4d-4e5c-b5ba-751f651142bb",
+        "applicationName": "MacroSensor",
+        "deviceProfileId": "90476cc5-c453-4f0d-96dd-3931171bbea7",
+        "deviceProfileName": "MacroSensor",
+        "deviceName": "MS1",
+        "devEui": "70b3d5a4d31205cf",
+        "deviceClassEnabled": "CLASS_C",
+        "tags": {}
+    },
+    "queueItemId": "cf281c9a-76e9-4195-b3a3-393b97d7dacb",
+    "fCntDown": 7,
+    "gatewayId": "ac1f09fffe1ea999",
+    "txInfo": {
+        "frequency": 923200000,
+        "power": 16,
+        "modulation": {
+            "lora": {
+                "bandwidth": 125000,
+                "spreadingFactor": 10,
+                "codeRate": "CR_4_5",
+                "polarizationInversion": true
+            }
+        },
+        "timing": {
+            "immediately": {}
+        },
+        "context": "VlzsIw=="
+    }
+}

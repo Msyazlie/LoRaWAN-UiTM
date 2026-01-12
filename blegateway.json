@@ -1,0 +1,53 @@
+{
+    "deduplicationId": "5f1071a4-4781-44d8-baa7-6accf23da11e",
+    "time": "2026-01-07T02:51:38.571669435+00:00",
+    "deviceInfo": {
+        "tenantId": "fe0ccc4c-c197-4be4-93b5-6b17edf37787",
+        "tenantName": "UiTM",
+        "applicationId": "cf330cd9-4b95-4c3c-955f-69eb5fe592e5",
+        "applicationName": "BLGateway",
+        "deviceProfileId": "a6a8198d-4b5f-4dd4-988e-2bd700899ed2",
+        "deviceProfileName": "BLGateway",
+        "deviceName": "BLG02",
+        "devEui": "70b3d5a4d31205c5",
+        "deviceClassEnabled": "CLASS_A",
+        "tags": {}
+    },
+    "devAddr": "00be2cbb",
+    "adr": false,
+    "dr": 3,
+    "fCnt": 14,
+    "fPort": 34,
+    "confirmed": false,
+    "data": "gQAQZK+u",
+    "object": {
+        "beacon1_minor": "64AF",
+        "type": "DeviceType1",
+        "number": 1,
+        "rssi1": -82,
+        "beacon1": "001064AF"
+    },
+    "rxInfo": [
+        {
+            "gatewayId": "ac1f09fffe1ea999",
+            "uplinkId": 50628,
+            "nsTime": "2026-01-07T02:51:38.361898590+00:00",
+            "rssi": -29,
+            "snr": 12.8,
+            "location": {},
+            "context": "bl0nkA==",
+            "crcStatus": "CRC_OK"
+        }
+    ],
+    "txInfo": {
+        "frequency": 923200000,
+        "modulation": {
+            "lora": {
+                "bandwidth": 125000,
+                "spreadingFactor": 9,
+                "codeRate": "CR_4_5"
+            }
+        }
+    },
+    "regionConfigId": "as923"
+}
