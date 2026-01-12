@@ -59,14 +59,8 @@ def on_mqtt_message(payload):
     if 'deviceInfo' in payload:
         new_app_id = payload['deviceInfo']['applicationId']
         
-        # On first uplink, send mute command to clear any lingering alarms
-        if current_app_id is None and new_app_id:
-            current_app_id = new_app_id
-            set_app_id(new_app_id)
-            print("🔇 Startup: Sending MUTE to clear any previous alarms...")
-            from src.logic.alarm_rules import stop_alarm
-            stop_alarm(mqtt_svc, ProximityConfig.MACRO_SENSOR_EUI, "0000")
-        else:
+        # Update Application ID if it changes
+        if current_app_id != new_app_id:
             current_app_id = new_app_id
             set_app_id(new_app_id)
 
@@ -163,6 +157,10 @@ if __name__ == "__main__":
         print(f"   • {bid}: {info.get('name', 'Unknown')}")
     print()
     
+    # Initialize custom event hooks
+    from src.hooks.custom_actions import register_hooks
+    register_hooks()
+
     # Initialize MQTT client
     mqtt_svc = MQTTClient(on_mqtt_message)
     

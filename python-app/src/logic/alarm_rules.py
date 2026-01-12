@@ -6,12 +6,12 @@ Logic: SAFE when beacon is NEAR (strong signal), ALARM when beacon moves AWAY (w
 Use Case: Asset tracking - alarm when tagged item leaves the safe zone (e.g., different floor).
 
 CORRECT LOGIC:
-    RSSI > -80 dBm = SAFE (beacon nearby, same floor) → Silence alarm
-    RSSI ≤ -80 dBm = ALARM (beacon far, different floor) → Trigger alarm
+    RSSI > -70 dBm = SAFE (beacon nearby, safe zone) → Silence alarm
+    RSSI ≤ -70 dBm = ALARM (beacon far, left safe zone) → Trigger alarm
 
 Author: IoT Security System
-Version: 3.1
-Date: 2025-12-24
+Version: 3.2
+Date: 2026-01-07
 """
 
 import time
@@ -20,6 +20,8 @@ import base64
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
 from enum import Enum
+from src.services.event_manager import EventManager
+from src.config.settings import SAFE_RSSI_THRESHOLD
 
 
 # =============================================================================
@@ -31,12 +33,18 @@ class ProximityConfig:
     
     # RSSI Threshold (dBm)
     # Below this = ALARM (weak signal / danger zone)
-    RSSI_THRESHOLD = -85
+    # RSSI Threshold (dBm)
+    # Below this = ALARM (weak signal / danger zone)
+    RSSI_THRESHOLD = SAFE_RSSI_THRESHOLD
     
     # =================================================================
     # TARGET DEVICE (Update this to your Macro Sensor's DevEUI)
     # =================================================================
-    MACRO_SENSOR_EUI = "70b3d5a4d31205cf"  # ← YOUR SENSOR EUI
+    MACRO_SENSOR_EUI = "70b3d5a4d31205ce"  # ← YOUR SENSOR EUI
+    
+    # Beacon Major ID (Must match your beacons)
+    # Log shows "001064AF", so Major is likely "0010"
+    BEACON_MAJOR = "0010"
     
     # =================================================================
     # MACRO SENSOR APPLICATION ID (CRITICAL!)
@@ -60,10 +68,12 @@ class ProximityConfig:
     # Debounce - weak signal must persist this long before alarm
     DEBOUNCE_SECONDS = 5
     
-    # Hex Commands
-    CMD_VOLUME_HIGH = "B0000103"   # Set buzzer volume to HIGH (3)
+    # Hex Commands (based on Lansitec documentation)
+    # Type 0xB (Alarm Config): B0 + MSGID + ParamType + Value
+    CMD_VOLUME_HIGH = "B0000104"   # Set buzzer volume to 4 (loudest)
     CMD_VOLUME_MUTE = "B0000100"   # Mute buzzer (volume 0)
-    CMD_TRIGGER_BASE = "AC"        # Beacon search command prefix
+    CMD_DURATION = "B0000206"       # Set buzzer duration to 60s (06 * 10s)
+    CMD_TRIGGER_BASE = "AC"         # Beacon search command prefix (Type 0xA, Cmd 0xC)
 
 
 class SecurityZone(Enum):
@@ -79,11 +89,12 @@ class SecurityZone(Enum):
 @dataclass
 class BeaconState:
     beacon_id: str
-    zone: SecurityZone = SecurityZone.SAFE
+    zone: Optional[SecurityZone] = None
     last_rssi: int = -999
     last_seen: float = 0
     weak_start: Optional[float] = None
     alarm_active: bool = False
+    initialized: bool = False
 
 
 # =============================================================================
@@ -110,8 +121,8 @@ def get_all_beacon_states() -> Dict[str, Dict]:
     return {
         bid: {
             "id": state.beacon_id,
-            "zone": state.zone.value,
-            "state": state.zone.value,
+            "zone": state.zone.value if state.zone else "UNKNOWN",
+            "state": state.zone.value if state.zone else "UNKNOWN",
             "rssi": state.last_rssi,
             "last_seen": state.last_seen,
             "alarm_active": state.alarm_active
@@ -128,9 +139,9 @@ def check_alarm_conditions(rssi: int, minor_id: str, mqtt_client: Any) -> str:
     """
     Check safe zone alarm conditions.
     
-    SAFE ZONE LOGIC:
-        RSSI > -80 dBm = SAFE (beacon nearby, same floor)
-        RSSI ≤ -80 dBm = ALARM (beacon far away, different floor)
+    SAFE ZONE LOGIC (REVERSED):
+        RSSI > -70 dBm = SAFE/SILENT (Near)
+        RSSI ≤ -70 dBm = ALARM/BUZZ (Far)
     """
     global _app_id
     
@@ -139,56 +150,86 @@ def check_alarm_conditions(rssi: int, minor_id: str, mqtt_client: Any) -> str:
     state.last_rssi = rssi
     state.last_seen = time.time()
     
+    # Capture old state for event detection
+    old_zone = state.zone
+    
     print(f"📍 Beacon {minor_id}: RSSI {rssi} dBm", end="")
     
     # =========================================================
-    # SAFE ZONE: RSSI > -80 dBm (Strong Signal = Beacon Nearby)
+    # SAFE ZONE: RSSI > -70 dBm (Strong Signal = Proximity)
+    # ACTION: SILENCE (User Request: Safe Zone is Silent)
     # =========================================================
     if rssi > ProximityConfig.RSSI_THRESHOLD:
-        print(f" → 🟢 SAFE ZONE (nearby)")
+        print(f" → 🟢 SAFE ZONE (Proximity - Safe)")
         
-        # Stop alarm when beacon returns to safe zone
-        if state.alarm_active:
-            print(f"   ✅ Beacon returned to safe zone - Stopping alarm")
+        # Stop alarm when beacon enters safe zone
+        # OR if this is the first time we see it (Initialization Sync)
+        if state.alarm_active or not state.initialized:
+            if not state.initialized:
+                print(f"   🔄 First detection - Forcing state sync (SILENCE)")
+            else:
+                print(f"   ✅ Beacon entered SAFE ZONE - Stopping alarm")
+                
             stop_alarm(mqtt_client, ProximityConfig.MACRO_SENSOR_EUI, minor_id)
             state.alarm_active = False
+            state.initialized = True
         
         state.zone = SecurityZone.SAFE
         state.weak_start = None
+        state.initialized = True
+        
+        # Check for state change
+        if old_zone is not None and old_zone != state.zone:
+            EventManager.emit("beacon_state_change", {
+                "beacon_id": minor_id,
+                "old_state": old_zone.value if old_zone else "UNKNOWN",
+                "new_state": state.zone.value,
+                "rssi": rssi
+            })
+            
         return "SAFE"
-    
+
     # =========================================================
-    # ALARM ZONE: RSSI ≤ -80 dBm (Weak Signal = Beacon Far Away)
+    # ALARM ZONE: RSSI <= -70 dBm (Weak Signal = Far)
+    # ACTION: TRIGGER ALARM (User Request: Alarm Zone triggers buzz)
     # =========================================================
     else:
-        # Start debounce timer
+        # Start debounce timer for ALARM
         if state.weak_start is None:
             state.weak_start = time.time()
-            state.zone = SecurityZone.WEAK
-            print(f" → 🟡 WEAK SIGNAL - monitoring...")
-            return "WEAK"
+            state.zone = SecurityZone.ALARM # Using ALARM/WEAK pending confirmation
+            print(f" → � LEAVING SAFE ZONE - monitoring...")
+            
+            if old_zone is not None and old_zone != state.zone:
+                 EventManager.emit("beacon_state_change", {
+                    "beacon_id": minor_id,
+                    "old_state": old_zone.value if old_zone else "UNKNOWN",
+                    "new_state": state.zone.value,
+                    "rssi": rssi
+                })
+            return "ALARM"
+
+        duration = time.time() - state.weak_start
         
-        weak_duration = time.time() - state.weak_start
-        
-        # If weak for long enough, trigger alarm
-        if weak_duration >= ProximityConfig.DEBOUNCE_SECONDS:
-            print(f" → 🔴 ALARM ZONE (weak for {weak_duration:.1f}s)")
+        # Trigger buzz if signal remains weak (Far away)
+        if duration >= ProximityConfig.DEBOUNCE_SECONDS:
+            print(f" → � ALARM ZONE (Confirmed Away for {duration:.1f}s)")
             
             if not state.alarm_active:
                 print(f"\n🚨 ═══════════════════════════════════════════")
-                print(f"🚨  ALERT: Beacon leaving safe zone!")
+                print(f"🚨  ALARM ZONE ACTIVATION (Buzzing)")
                 print(f"🚨  Beacon: {minor_id}")
-                print(f"🚨  RSSI: {rssi} dBm (threshold: {ProximityConfig.RSSI_THRESHOLD})")
+                print(f"🚨  RSSI: {rssi} dBm (Too weak/far)")
                 print(f"🚨 ═══════════════════════════════════════════\n")
                 
                 trigger_alarm_with_sequence(mqtt_client, ProximityConfig.MACRO_SENSOR_EUI, minor_id)
                 state.alarm_active = True
-            
+                
             state.zone = SecurityZone.ALARM
             return "ALARM"
         else:
-            print(f" → 🟡 WEAK ({weak_duration:.1f}s / {ProximityConfig.DEBOUNCE_SECONDS}s)")
-            return "WEAK"
+             print(f" → � LEAVING ({duration:.1f}s / {ProximityConfig.DEBOUNCE_SECONDS}s)")
+             return "ALARM"
 
 
 def check_floor_security(rssi: int, minor_id: str, mqtt_client: Any) -> SecurityZone:
@@ -202,12 +243,12 @@ def check_floor_security(rssi: int, minor_id: str, mqtt_client: Any) -> Security
 
 def trigger_alarm_with_sequence(mqtt_client: Any, sensor_eui: str, beacon_minor: str) -> bool:
     """
-    Trigger alarm by sending the AC Search Beacon command.
+    Trigger alarm by sending UNMUTE + AC Search Beacon commands.
     
-    Command Structure: AC + 00 (MsgID) + [Beacon_Minor_ID]
-    Example: If Beacon ID is 64AF, payload is AC0064AF
-    
-    NOTE: Volume configuration (B0...) removed - configure volume manually once.
+    Sequence:
+    1. Send B0000101 (UNMUTE - Set Volume HIGH)
+    2. Wait briefly for device to process
+    3. Send AC + MsgID + Minor (Search Beacon)
     
     Args:
         mqtt_client: MQTT client for publishing downlinks
@@ -215,35 +256,59 @@ def trigger_alarm_with_sequence(mqtt_client: Any, sensor_eui: str, beacon_minor:
         beacon_minor: Beacon Minor ID (e.g., "64B0", "64AF")
     
     Returns:
-        bool: True if command sent successfully
+        bool: True if commands sent successfully
     """
     global _msg_id_counter
     
-    # Build trigger command: AC + MsgID + Minor
-    # MsgID increments to ensure each command is unique (sensor ignores duplicates)
-    msg_id = f"{_msg_id_counter:02X}"
-    _msg_id_counter = (_msg_id_counter + 1) % 256
-    
     minor = beacon_minor.upper().zfill(4)
-    trigger_hex = f"AC{msg_id}{minor}"  # AC + MsgID + Minor
     
-    print(f"\n🚨 TRIGGER ALARM: {trigger_hex}")
+    print(f"\n🚨 TRIGGER ALARM SEQUENCE")
     print(f"   Target Sensor: {sensor_eui}")
     print(f"   Beacon Minor: {minor}")
     
-    success = _send_downlink_to_device(
+    # Step 1: Set buzzer volume to 4 (loudest)
+    print(f"\n   📢 Step 1: Set Volume to LOUDEST (4)")
+    _send_downlink_to_device(
+        mqtt_client, 
+        sensor_eui, 
+        ProximityConfig.CMD_VOLUME_HIGH,  # B0000104
+        "VOLUME (Level=4)"
+    )
+    
+    time.sleep(ProximityConfig.COMMAND_DELAY)
+    
+    # Step 2: Set buzzer duration to 60s
+    print(f"\n   ⏱️ Step 2: Set Duration to 60s")
+    _send_downlink_to_device(
+        mqtt_client, 
+        sensor_eui, 
+        ProximityConfig.CMD_DURATION,  # B0000206
+        "DURATION (60s)"
+    )
+    
+    time.sleep(ProximityConfig.COMMAND_DELAY)
+    
+    # Step 3: Send AC Search Beacon command
+    # MsgID increments to ensure each command is unique
+    msg_id = f"{_msg_id_counter:02X}"
+    _msg_id_counter = (_msg_id_counter + 1) % 256
+    
+    trigger_hex = f"AC{msg_id}{ProximityConfig.BEACON_MAJOR}{minor}"  # AC + MsgID + Major + Minor
+    
+    print(f"\n   🔔 Step 3: SEARCH BEACON ({trigger_hex})")
+    trigger_success = _send_downlink_to_device(
         mqtt_client, 
         sensor_eui, 
         trigger_hex, 
         f"SEARCH BEACON ({trigger_hex})"
     )
     
-    if success:
-        print(f"   ✅ Command sent!")
+    if trigger_success:
+        print(f"\n   ✅ Alarm trigger sequence complete!")
     else:
-        print(f"   ❌ Failed to send command!")
+        print(f"\n   ❌ Failed to send search command!")
     
-    return success
+    return trigger_success
 
 
 def stop_alarm(mqtt_client: Any, sensor_eui: str, beacon_minor: str) -> bool:
@@ -275,6 +340,53 @@ def stop_alarm(mqtt_client: Any, sensor_eui: str, beacon_minor: str) -> bool:
     return success
 
 
+def unmute_alarm(mqtt_client: Any, sensor_eui: str, beacon_minor: str) -> bool:
+    """
+    Unmute alarm by sending the B0000101 command (Volume HIGH).
+    
+    This sets the buzzer volume to 3 (HIGH), enabling it to make sound.
+    
+    Args:
+        mqtt_client: MQTT client for publishing downlinks
+        sensor_eui: Target sensor's DevEUI
+        beacon_minor: Beacon Minor ID (not used, but kept for consistency)
+    
+    Returns:
+        bool: True if command sent successfully
+    """
+    # B0000103 = Set volume to 3 (HIGH/UNMUTE)
+    unmute_hex = "B0000101"
+    
+    print(f"   📢 UNMUTE ALARM: {unmute_hex} (Volume HIGH)")
+    
+    success = _send_downlink_to_device(
+        mqtt_client, 
+        sensor_eui, 
+        unmute_hex, 
+        "UNMUTE (Volume=3)"
+    )
+    
+    return success
+
+
+def start_alarm(mqtt_client: Any, sensor_eui: str, beacon_minor: str) -> bool:
+    """
+    Start alarm by sending UNMUTE + AC Search Beacon commands.
+    
+    This is the opposite of stop_alarm() - it enables the buzzer and triggers search.
+    
+    Args:
+        mqtt_client: MQTT client for publishing downlinks
+        sensor_eui: Target sensor's DevEUI
+        beacon_minor: Beacon Minor ID to search for
+    
+    Returns:
+        bool: True if commands sent successfully
+    """
+    
+    print(f"\n   🔔 START ALARM for beacon {beacon_minor}")
+    return trigger_alarm_with_sequence(mqtt_client, sensor_eui, beacon_minor)
+
 def _send_downlink_to_device(mqtt_client: Any, device_eui: str, hex_cmd: str, cmd_name: str) -> bool:
     """
     Send a downlink command to a specific device.
@@ -282,7 +394,7 @@ def _send_downlink_to_device(mqtt_client: Any, device_eui: str, hex_cmd: str, cm
     Args:
         mqtt_client: MQTT client
         device_eui: Target device's DevEUI
-        hex_cmd: Hex command string (e.g., "B0000103")
+        hex_cmd: Hex command string (e.g., "B0000101")
         cmd_name: Human-readable command name for logging
     
     Returns:

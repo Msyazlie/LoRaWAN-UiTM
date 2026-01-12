@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk
 from src.config import settings
+from src.ui.device_config_window import open_config_window
 import time
 
 
@@ -54,6 +55,14 @@ class MonitorWindow:
                 font=("Helvetica", 18, "bold"), 
                 fg="white", bg=self.colors["bg"]).pack(side=tk.LEFT)
         
+        # Settings button
+        btn_settings = tk.Button(header, text="⚙️ Settings", 
+                                 bg="#4b5563", fg="white",
+                                 font=("Arial", 10, "bold"),
+                                 cursor="hand2",
+                                 command=self._open_settings)
+        btn_settings.pack(side=tk.RIGHT, padx=(10, 0))
+        
         self.lbl_mqtt_status = tk.Label(header, text="● MQTT: Connecting...", 
                                         fg="#fbbf24", bg=self.colors["bg"],
                                         font=("Consolas", 10))
@@ -64,7 +73,7 @@ class MonitorWindow:
         info_frame.pack(fill=tk.X, padx=20, pady=(10, 0))
         
         tk.Label(info_frame, 
-                text=f"🟢 Safe Zone: RSSI > {settings.SAFE_RSSI_THRESHOLD} dBm  |  🔴 Alarm Zone: RSSI < {settings.ALARM_RSSI_THRESHOLD} dBm",
+                text=f"🟢 Safe Zone (Silent): RSSI > {settings.SAFE_RSSI_THRESHOLD} dBm  |  🔴 Alarm Zone (Active): RSSI < {settings.ALARM_RSSI_THRESHOLD} dBm",
                 font=("Consolas", 9), fg="#888", bg=self.colors["card"]).pack()
 
         # --- Beacon Table ---
@@ -241,3 +250,14 @@ class MonitorWindow:
         """Silence all alarms."""
         print("🔇 Silence all requested")
         # TODO: Could call alarm_rules.send_silence_command() for each beacon
+    
+    def _open_settings(self):
+        """Open the device configuration window."""
+        open_config_window(self.root, self._on_config_saved)
+    
+    def _on_config_saved(self):
+        """Callback when configuration is saved."""
+        print("🔄 Configuration saved, refreshing...")
+        # Refresh beacon table with new configuration
+        self.tree.delete(*self.tree.get_children())
+        self._init_beacon_table()
