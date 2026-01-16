@@ -14,7 +14,7 @@ SCANNERS = {
 }
 
 # --- ALARM# Default Target Device
-DEFAULT_MACRO_SENSOR_EUI = "70b3d5a4d31205ce" # Device that rings
+DEFAULT_MACRO_SENSOR_EUI = "70b3d5a4d31205cf" # Device that rings
 ALARM_FPORT = 2
 ALARM_ON_HEX = "01"
 ALARM_OFF_HEX = "00"

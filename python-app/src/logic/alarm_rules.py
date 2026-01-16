@@ -21,7 +21,12 @@ from dataclasses import dataclass
 from typing import Optional, Dict, Any
 from enum import Enum
 from src.services.event_manager import EventManager
-from src.config.settings import SAFE_RSSI_THRESHOLD
+from src.config.settings import (
+    SAFE_RSSI_THRESHOLD, 
+    load_devices, 
+    get_floor_by_device, 
+    get_macro_sensor_for_floor
+)
 
 
 # =============================================================================
@@ -40,7 +45,7 @@ class ProximityConfig:
     # =================================================================
     # TARGET DEVICE (Update this to your Macro Sensor's DevEUI)
     # =================================================================
-    MACRO_SENSOR_EUI = "70b3d5a4d31205ce"  # ← YOUR SENSOR EUI
+    MACRO_SENSOR_EUI = "70b3d5a4d31205cf"  # ← YOUR SENSOR EUI
     
     # Beacon Major ID (Must match your beacons)
     # Log shows "001064AF", so Major is likely "0010"
@@ -95,6 +100,7 @@ class BeaconState:
     weak_start: Optional[float] = None
     alarm_active: bool = False
     initialized: bool = False
+    current_location: str = "Unknown"
 
 
 # =============================================================================
@@ -125,7 +131,8 @@ def get_all_beacon_states() -> Dict[str, Dict]:
             "state": state.zone.value if state.zone else "UNKNOWN",
             "rssi": state.last_rssi,
             "last_seen": state.last_seen,
-            "alarm_active": state.alarm_active
+            "alarm_active": state.alarm_active,
+            "location": state.current_location
         }
         for bid, state in _beacon_states.items()
     }
@@ -135,13 +142,15 @@ def get_all_beacon_states() -> Dict[str, Dict]:
 # MAIN FUNCTION - SAFE ZONE LOGIC
 # =============================================================================
 
-def check_alarm_conditions(rssi: int, minor_id: str, mqtt_client: Any) -> str:
+def check_alarm_conditions(rssi: int, minor_id: str, mqtt_client: Any, gateway_eui: str = None) -> str:
     """
-    Check safe zone alarm conditions.
+    Check alarm conditions based on location (Cross-Level Detection).
     
-    SAFE ZONE LOGIC (REVERSED):
-        RSSI > -70 dBm = SAFE/SILENT (Near)
-        RSSI ≤ -70 dBm = ALARM/BUZZ (Far)
+    LOGIC:
+        1. Identify Detection Floor using 'gateway_eui'
+        2. Identify Beacon Home Floor using 'minor_id' (from devices.json)
+        3. If Detection Floor == Home Floor -> SAFE (Silence)
+        4. If Detection Floor != Home Floor -> ALARM (Buzz Macro Sensor on Detection Floor)
     """
     global _app_id
     
@@ -152,25 +161,95 @@ def check_alarm_conditions(rssi: int, minor_id: str, mqtt_client: Any) -> str:
     
     # Capture old state for event detection
     old_zone = state.zone
+
+    # ---------------------------------------------------------
+    # LOCATION-BASED LOGIC
+    # ---------------------------------------------------------
+    devices_config = load_devices()
     
-    print(f"📍 Beacon {minor_id}: RSSI {rssi} dBm", end="")
-    
-    # =========================================================
-    # SAFE ZONE: RSSI > -70 dBm (Strong Signal = Proximity)
-    # ACTION: SILENCE (User Request: Safe Zone is Silent)
-    # =========================================================
-    if rssi > ProximityConfig.RSSI_THRESHOLD:
-        print(f" → 🟢 SAFE ZONE (Proximity - Safe)")
+    # 1. Find Detection Floor
+    detection_floor = None
+    if gateway_eui:
+        detection_floor = get_floor_by_device(gateway_eui)
         
-        # Stop alarm when beacon enters safe zone
-        # OR if this is the first time we see it (Initialization Sync)
+    detection_floor_id = detection_floor.get("id") if detection_floor else "UNKNOWN"
+    detection_floor_name = detection_floor.get("name", "Unknown Floor") if detection_floor else "Unknown Floor"
+    
+    # Update Location State
+    state.current_location = detection_floor_name
+
+    # 2. Find Beacon Home Floor
+    home_floor_id = "UNKNOWN"
+    for b in devices_config.get("beacons", []):
+        if b.get("id", "").upper() == minor_id:
+            home_floor_id = b.get("home_floor_id")
+            break
+            
+    print(f"📍 Beacon {minor_id} | RSSI {rssi} dBm | G/W: {gateway_eui} ({detection_floor_name})")
+    
+    # ---------------------------------------------------------
+    # DETERMINE SAFE VS ALARM
+    # ---------------------------------------------------------
+    is_safe_zone = False
+    
+    # Logic: 
+    #   ALARM if: (Wrong Floor) OR (Weak Signal)
+    #   SAFE only if: (Correct Floor) AND (Strong Signal)
+    
+    is_wrong_floor = False
+    is_weak_signal = rssi < ProximityConfig.RSSI_THRESHOLD
+    
+    # Check Location Correctness
+    if detection_floor_id != "UNKNOWN" and home_floor_id != "UNKNOWN":
+        if detection_floor_id != home_floor_id:
+            is_wrong_floor = True
+            print(f"   ❌ MISMATCH: Home {home_floor_id} != Detected {detection_floor_id}")
+        else:
+            print(f"   ✅ MATCH: Home {home_floor_id} == Detected {detection_floor_id}")
+            
+    # Determine Final State
+    if is_wrong_floor:
+        is_safe_zone = False
+        print(f"   🚨 ALARM REASON: WRONG FLOOR")
+    elif is_weak_signal:
+        is_safe_zone = False
+        print(f"   🚨 ALARM REASON: WEAK SIGNAL ({rssi} <= {ProximityConfig.RSSI_THRESHOLD})")
+    else:
+        is_safe_zone = True
+        print(f"   🟢 SAFE REASON: CORRECT FLOOR + STRONG SIGNAL")
+
+    # Determine Target Sensor (The one on the DETECTION floor)
+    target_sensor_eui = detection_floor.get("macro_sensor_eui") if detection_floor else ProximityConfig.MACRO_SENSOR_EUI
+    
+    # =========================================================
+    # STARTUP SILENCE (First Detection)
+    # =========================================================
+    if not state.initialized:
+        print(f"   🚀 STARTUP: First detection of {minor_id} - Forcing SILENCE")
+        stop_alarm(mqtt_client, target_sensor_eui, minor_id)
+        
+        # Initialize state
+        state.initialized = True
+        state.zone = SecurityZone.SAFE
+        state.weak_start = None
+        state.current_location = detection_floor_name
+        
+        return "SAFE"
+    
+    # =========================================================
+    # SAFE ZONE (Correct Floor)
+    # ACTION: SILENCE
+    # =========================================================
+    if is_safe_zone:
+        print(f" → 🟢 SAFE ZONE (Correct Floor)")
+        
         if state.alarm_active or not state.initialized:
             if not state.initialized:
                 print(f"   🔄 First detection - Forcing state sync (SILENCE)")
             else:
-                print(f"   ✅ Beacon entered SAFE ZONE - Stopping alarm")
+                print(f"   ✅ Returned to Home Floor - Stopping alarm on {target_sensor_eui}")
                 
-            stop_alarm(mqtt_client, ProximityConfig.MACRO_SENSOR_EUI, minor_id)
+            stop_alarm(mqtt_client, target_sensor_eui, minor_id)
             state.alarm_active = False
             state.initialized = True
         
@@ -178,7 +257,6 @@ def check_alarm_conditions(rssi: int, minor_id: str, mqtt_client: Any) -> str:
         state.weak_start = None
         state.initialized = True
         
-        # Check for state change
         if old_zone is not None and old_zone != state.zone:
             EventManager.emit("beacon_state_change", {
                 "beacon_id": minor_id,
@@ -190,8 +268,8 @@ def check_alarm_conditions(rssi: int, minor_id: str, mqtt_client: Any) -> str:
         return "SAFE"
 
     # =========================================================
-    # ALARM ZONE: RSSI <= -70 dBm (Weak Signal = Far)
-    # ACTION: TRIGGER ALARM (User Request: Alarm Zone triggers buzz)
+    # ALARM ZONE (Wrong Floor)
+    # ACTION: TRIGGER ALARM
     # =========================================================
     else:
         # Start debounce timer for ALARM
@@ -219,10 +297,11 @@ def check_alarm_conditions(rssi: int, minor_id: str, mqtt_client: Any) -> str:
                 print(f"\n🚨 ═══════════════════════════════════════════")
                 print(f"🚨  ALARM ZONE ACTIVATION (Buzzing)")
                 print(f"🚨  Beacon: {minor_id}")
-                print(f"🚨  RSSI: {rssi} dBm (Too weak/far)")
+                print(f"🚨  Location: {detection_floor_name} (Wrong Floor!)")
+                print(f"🚨  Target Sensor: {target_sensor_eui}")
                 print(f"🚨 ═══════════════════════════════════════════\n")
                 
-                trigger_alarm_with_sequence(mqtt_client, ProximityConfig.MACRO_SENSOR_EUI, minor_id)
+                trigger_alarm_with_sequence(mqtt_client, target_sensor_eui, minor_id)
                 state.alarm_active = True
                 
             state.zone = SecurityZone.ALARM
@@ -402,17 +481,25 @@ def _send_downlink_to_device(mqtt_client: Any, device_eui: str, hex_cmd: str, cm
     """
     global _app_id
     
-    # Use the hardcoded Macro Sensor App ID (not the dynamic one from uplinks!)
-    app_id = ProximityConfig.MACRO_SENSOR_APP_ID
+    # Use the target sensor EUI passed in, or fallback to default
+    target_eui = device_eui if device_eui else ProximityConfig.MACRO_SENSOR_EUI
+    
+    # Use Dynamic App ID (captured from uplinks)
+    # If not yet captured, fallback to hardcoded but print warning
+    app_id = _app_id
+    
+    if not app_id:
+        print("   ⚠️ WARNING: No dynamic App ID captured yet! Falling back to Config ID.")
+        app_id = ProximityConfig.MACRO_SENSOR_APP_ID
     
     try:
-        topic = f"application/{app_id}/device/{ProximityConfig.MACRO_SENSOR_EUI}/command/down"
+        topic = f"application/{app_id}/device/{target_eui}/command/down"
         
         data_bytes = bytes.fromhex(hex_cmd)
         data_b64 = base64.b64encode(data_bytes).decode('utf-8')
         
         payload = {
-            "devEui": ProximityConfig.MACRO_SENSOR_EUI,
+            "devEui": target_eui,
             "confirmed": False,
             "fPort": ProximityConfig.FPORT,
             "data": data_b64
@@ -421,7 +508,7 @@ def _send_downlink_to_device(mqtt_client: Any, device_eui: str, hex_cmd: str, cm
         # DEBUG: Print full details
         print(f"   📡 {cmd_name}: {hex_cmd} → FPort {ProximityConfig.FPORT}")
         print(f"   📝 Topic: {topic}")
-        print(f"   📝 App ID (HARDCODED): {app_id}")
+        print(f"   📝 App ID: {app_id}")
         print(f"   📝 Payload: {json.dumps(payload)}")
         
         mqtt_client.publish(topic, json.dumps(payload))

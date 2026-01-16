@@ -23,12 +23,12 @@ TARGET_SERVICE_UUID = "fff6"   # BLE UUID to look for
 # --- SCANNERS & CLOUD ---
 # Map DevEUIs to Human Readable Names
 SCANNERS = {
-    "70b3d5a4d31205ce": "Macro Sensor (Safe Zone)",
+    "70b3d5a4d31205cf": "Macro Sensor (Safe Zone)",
     "70b3d5a4d3120591": "Gateway (Safe Zone)"
 }
 
 # --- ALARM SETTINGS ---
-ALARM_TARGET_EUI = "70b3d5a4d31205ce"  # Device that rings
+ALARM_TARGET_EUI = "70b3d5a4d31205cf"  # Device that rings
 ALARM_FPORT = 10  # FPort for Lansitec management/config commands (Standard port)
 
 # Downlink Commands
@@ -42,6 +42,11 @@ ALARM_RSSI_THRESHOLD = -60 # dBm - Below this = Alarm Zone (Away/Active - BUZZ)
 DEBOUNCE_SECONDS = 5        # Sustain weak signal for X seconds before alarm
 MAX_SILENCE_DURATION = 120  # Watchdog: Seconds of no signal before alarm
 GUI_TIMEOUT_SECONDS = 120   # GUI: Grace period to keep "Safe Zone" on screen
+
+# --- DASHBOARD INTEGRATION ---
+# URL to send HTTP POST requests with alarm status
+# Example: "http://thingsboard.local/api/v1/telemetry"
+DASHBOARD_WEBHOOK_URL = os.getenv('DASHBOARD_URL', "https://asset.propkita.com/admin/tracking-logs")
 
 
 # --- WATCHLIST LOADER ---
@@ -153,7 +158,7 @@ def get_floor_by_device(device_eui):
         dict: Floor configuration or None
     """
     config = load_devices()
-    device_eui = device_eui.lower()
+    device_eui = device_eui.lower().strip()
     
     for floor in config.get("floors", []):
         if (floor.get("macro_sensor_eui", "").lower() == device_eui or

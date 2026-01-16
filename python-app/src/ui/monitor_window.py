@@ -81,13 +81,14 @@ class MonitorWindow:
         table_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
         
         # Treeview
-        columns = ("status", "id", "name", "rssi", "last_seen")
+        columns = ("status", "id", "name", "location", "rssi", "last_seen")
         self.tree = ttk.Treeview(table_frame, columns=columns, show="headings", height=10)
         
         # Column headings
         self.tree.heading("status", text="Status")
         self.tree.heading("id", text="Beacon ID")
         self.tree.heading("name", text="Name")
+        self.tree.heading("location", text="Location")
         self.tree.heading("rssi", text="RSSI")
         self.tree.heading("last_seen", text="Last Seen")
         
@@ -95,6 +96,7 @@ class MonitorWindow:
         self.tree.column("status", width=100, anchor="center")
         self.tree.column("id", width=100, anchor="center")
         self.tree.column("name", width=180, anchor="w")
+        self.tree.column("location", width=150, anchor="center")
         self.tree.column("rssi", width=100, anchor="center")
         self.tree.column("last_seen", width=120, anchor="center")
         
@@ -150,6 +152,7 @@ class MonitorWindow:
                     "⚫ WAITING",
                     beacon_id,
                     info.get("name", f"Beacon {beacon_id}"),
+                    "Unknown",
                     "-- dBm",
                     "Never"
                 ))
@@ -178,6 +181,7 @@ class MonitorWindow:
         for state in beacon_states:
             beacon_id = state.get("id", "")
             name = state.get("name", f"Beacon {beacon_id}")
+            location = state.get("location", "Unknown")
             rssi = state.get("rssi", 0)
             status = state.get("state", "UNKNOWN")
             last_seen = state.get("last_seen", 0)
@@ -210,11 +214,11 @@ class MonitorWindow:
             try:
                 if self.tree.exists(beacon_id):
                     self.tree.item(beacon_id, values=(
-                        status_text, beacon_id, name, rssi_text, time_str
+                        status_text, beacon_id, name, location, rssi_text, time_str
                     ))
                 else:
                     self.tree.insert("", tk.END, iid=beacon_id, values=(
-                        status_text, beacon_id, name, rssi_text, time_str
+                        status_text, beacon_id, name, location, rssi_text, time_str
                     ))
             except Exception as e:
                 print(f"Error updating beacon {beacon_id}: {e}")

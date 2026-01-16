@@ -55,9 +55,11 @@ def on_mqtt_message(payload):
     """
     global current_app_id
     
-    # 1. Capture Application ID for downlinks
+    # 1. Capture Application ID and Gateway EUI
+    gateway_eui = None
     if 'deviceInfo' in payload:
         new_app_id = payload['deviceInfo']['applicationId']
+        gateway_eui = payload['deviceInfo'].get('devEui')
         
         # Update Application ID if it changes
         if current_app_id != new_app_id:
@@ -75,7 +77,7 @@ def on_mqtt_message(payload):
             
             if minor_id and rssi > -999:
                 # Check alarm conditions (triggers/silences as needed)
-                check_alarm_conditions(rssi, minor_id, mqtt_svc)
+                check_alarm_conditions(rssi, minor_id, mqtt_svc, gateway_eui)
         
         # 4. THREAD-SAFE GUI UPDATE using .after()
         # This schedules the update on the main Tkinter thread

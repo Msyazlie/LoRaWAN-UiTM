@@ -28,7 +28,7 @@ SCANNERS = {
 
 # 3. ALARM TRIGGER DEVICE
 # Which device should ring the alarm? (The Macro Sensor)
-ALARM_TMACRO_SENSOR_EUI = "70b3d5a4d31205ce"
+ALARM_TMACRO_SENSOR_EUI = "70b3d5a4d31205cf"
 
 # 4. THRESHOLD SETTINGS
 # If RSSI is lower than this (e.g. -90), assume it's moving to another floor.

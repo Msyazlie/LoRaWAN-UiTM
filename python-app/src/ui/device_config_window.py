@@ -329,7 +329,7 @@ class DeviceConfigWindow:
         new_floor = {
             "id": f"floor_{floor_num}",
             "name": f"Floor {floor_num}",
-            "macro_sensor_eui": "70b3d5a4d31205ce",
+            "macro_sensor_eui": "70b3d5a4d31205cf",
             "bluetooth_gateway_eui": "",
             "lorawan_gateway_id": ""
         }

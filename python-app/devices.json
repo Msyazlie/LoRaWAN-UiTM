@@ -1,17 +1,28 @@
 {
   "floors": [
     {
-      "id": "floor_1",
-      "name": "Ground Floor",
+      "id": "level_1",
+      "name": "Level 1",
       "macro_sensor_eui": "70b3d5a4d31205ce",
-      "bluetooth_gateway_eui": "70b3d5a4d3120591",
-      "lorawan_gateway_id": "ac1f09fffe1ea999"
+      "bluetooth_gateway_eui": "70b3d5a4d31205c5"
+    },
+    {
+      "id": "level_G",
+      "name": "Level G",
+      "macro_sensor_eui": "70b3d5a4d31205cf",
+      "bluetooth_gateway_eui": "70b3d5a4d31205c4"
     }
   ],
   "beacons": [
-    {"id": "64B0", "name": "Asset Tag #1", "floor_id": "floor_1"},
-    {"id": "64AF", "name": "Asset Tag #2", "floor_id": "floor_1"},
-    {"id": "64AE", "name": "Asset Tag #3", "floor_id": "floor_1"}
-  ],
-  "_comment": "Device configuration for multi-floor alarm system. Edit via Settings GUI or manually."
+    {
+      "id": "64AF",
+      "home_floor_id": "level_1",
+      "name": "Beacon 64AF (Level 1)"
+    },
+    {
+      "id": "64B0",
+      "home_floor_id": "level_G",
+      "name": "Beacon 64B0 (Level G)"
+    }
+  ]
 }
